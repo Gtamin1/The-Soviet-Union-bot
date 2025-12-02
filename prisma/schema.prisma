@@ -27,6 +27,7 @@ model User {
   activityLogs       ActivityLog[]
   promotionHistory   PromotionHistory[]
   activitySessions   ActivitySession[]
+  playtimeSessions   PlaytimeSession[]
 
   @@index([discordId])
   @@index([robloxId])
@@ -290,6 +291,25 @@ model ActivitySession {
   @@index([userId])
   @@index([guildId])
   @@index([sessionType])
+}
+
+// Playtime sessions from Roblox game (works for verified AND unverified users)
+model PlaytimeSession {
+  id              Int       @id @default(autoincrement())
+  robloxId        String    // Store as string to match User.robloxId
+  userId          String?   // Link to User if verified (nullable)
+  date            DateTime  @db.Date // For grouping by day
+  duration        Int       // Duration in seconds
+  metadata        Json?     // Store extra data from game
+  createdAt       DateTime  @default(now())
+
+  // Relations (optional, only if verified)
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([robloxId, date])
+  @@index([robloxId])
+  @@index([date])
+  @@index([userId])
 }
 
 // Audit log for all actions

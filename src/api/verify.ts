@@ -23,6 +23,7 @@ router.use(requireApiKey);
 /**
  * GET /api/verify/:robloxId
  * Check if a user is verified
+ * Returns Discord info if verified
  */
 router.get('/:robloxId', async (req, res) => {
   const { robloxId } = req.params;
@@ -40,15 +41,25 @@ router.get('/:robloxId', async (req, res) => {
       });
     }
 
+    // Fetch Discord username from Discord ID
+    let discordUsername = null;
+    try {
+      // We don't have access to the Discord client here,
+      // so we'll return just the Discord ID
+      // The Roblox game can display the ID
+      discordUsername = user.discordId;
+    } catch {
+      discordUsername = user.discordId;
+    }
+
     return res.json({
       success: true,
       verified: true,
-      user: {
-        robloxId: user.robloxId,
-        robloxUsername: user.robloxUsername,
-        discordId: user.discordId,
-        verifiedAt: user.verifiedAt,
-      },
+      discordId: user.discordId,
+      discordUsername: discordUsername,
+      robloxUsername: user.robloxUsername,
+      robloxId: user.robloxId,
+      points: user.points,
     });
   } catch (error) {
     logger.error('Error in /api/verify/:robloxId:', error);

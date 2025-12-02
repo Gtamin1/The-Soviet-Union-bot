@@ -143,6 +143,7 @@ router.post('/remove', async (req, res) => {
 /**
  * GET /api/points/:robloxId
  * Get a user's points
+ * Returns 0 points if user not verified (for Roblox game compatibility)
  */
 router.get('/:robloxId', async (req, res) => {
   const { robloxId } = req.params;
@@ -153,17 +154,20 @@ router.get('/:robloxId', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found or not verified' });
+      // Return 0 points for unverified users (game expects this)
+      return res.json({
+        success: true,
+        points: 0,
+        verified: false,
+      });
     }
 
     return res.json({
       success: true,
-      user: {
-        robloxId: user.robloxId,
-        robloxUsername: user.robloxUsername,
-        discordId: user.discordId,
-        points: user.points,
-      },
+      points: user.points,
+      verified: true,
+      robloxUsername: user.robloxUsername,
+      discordId: user.discordId,
     });
   } catch (error) {
     logger.error('Error in /api/points/:robloxId:', error);

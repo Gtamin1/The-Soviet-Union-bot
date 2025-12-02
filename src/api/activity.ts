@@ -23,30 +23,65 @@ router.use(requireApiKey);
 /**
  * POST /api/activity/log
  * Log activity from a Roblox game
+ * NOW SUPPORTS: duration parameter for playtime tracking
+ * Works for BOTH verified and unverified users
  */
 router.post('/log', async (req, res) => {
-  const { robloxId, activityType, value, metadata } = req.body;
+  const { robloxId, activityType, value, duration, metadata } = req.body;
 
-  if (!robloxId || !activityType || value === undefined) {
-    return res.status(400).json({ error: 'Missing required fields: robloxId, activityType, value' });
+  if (!robloxId || !activityType) {
+    return res.status(400).json({ error: 'Missing required fields: robloxId, activityType' });
   }
 
   try {
-    // Find user
+    const robloxIdStr = robloxId.toString();
+
+    // Find user (may or may not be verified)
     const user = await prisma.user.findUnique({
-      where: { robloxId: robloxId.toString() },
+      where: { robloxId: robloxIdStr },
     });
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found or not verified' });
+    // Handle playtime tracking specifically
+    if (activityType === 'playtime') {
+      const sessionDuration = duration || value || 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Start of day in UTC
+
+      // Create playtime session (works for verified AND unverified)
+      await prisma.playtimeSession.create({
+        data: {
+          robloxId: robloxIdStr,
+          userId: user?.id || null,
+          date: today,
+          duration: Math.floor(sessionDuration),
+          metadata: metadata || null,
+        },
+      });
+
+      logger.info(`API: Logged ${sessionDuration}s playtime for robloxId ${robloxId}${user ? ` (${user.robloxUsername})` : ' (unverified)'}`);
+
+      return res.json({
+        success: true,
+        activityLogged: true,
+        verified: !!user,
+        robloxId: robloxIdStr,
+      });
     }
 
-    // Log activity
+    // For non-playtime activities, user must be verified
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found or not verified. Only playtime can be logged for unverified users.'
+      });
+    }
+
+    // Log activity (old behavior for non-playtime)
     await prisma.activityLog.create({
       data: {
         userId: user.id,
         activityType: activityType,
-        value: parseFloat(value),
+        value: parseFloat(value || duration || 0),
         metadata: metadata ? JSON.stringify(metadata) : null,
       },
     });
@@ -64,7 +99,7 @@ router.post('/log', async (req, res) => {
 
     if (activityConfig) {
       // Calculate points to award
-      const pointsToAward = Math.floor(parseFloat(value) * activityConfig.pointsPerUnit);
+      const pointsToAward = Math.floor(parseFloat(value || duration || 0) * activityConfig.pointsPerUnit);
 
       if (pointsToAward > 0) {
         // Update user points
