@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Complete Discord + Roblox bot system with verification, role binding, and points system",
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",

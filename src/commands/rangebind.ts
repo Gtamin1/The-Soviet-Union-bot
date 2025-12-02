@@ -10,12 +10,6 @@ import { logger } from '../lib/logger.js';
 export const data = new SlashCommandBuilder()
   .setName('rangebind')
   .setDescription('Bind a range of Roblox ranks to a Discord role')
-  .addStringOption(option =>
-    option
-      .setName('group-id')
-      .setDescription('The Roblox group ID (or use primary group if empty)')
-      .setRequired(false)
-  )
   .addIntegerOption(option =>
     option
       .setName('min-rank')
@@ -37,6 +31,12 @@ export const data = new SlashCommandBuilder()
       .setName('discord-role')
       .setDescription('The Discord role to bind')
       .setRequired(true)
+  )
+  .addStringOption(option =>
+    option
+      .setName('group-id')
+      .setDescription('The Roblox group ID (or use primary group if empty)')
+      .setRequired(false)
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
