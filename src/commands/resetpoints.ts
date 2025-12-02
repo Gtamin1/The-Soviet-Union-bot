@@ -1,0 +1,99 @@
+/**
+ * /resetpoints command - Reset a user's points to 0 (admin only)
+ */
+
+import { SlashCommandBuilder, ChatInputCommandInteraction, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
+import prisma from '../db/client.js';
+import { isAdmin } from '../lib/permissions.js';
+import { logger } from '../lib/logger.js';
+
+export const data = new SlashCommandBuilder()
+  .setName('resetpoints')
+  .setDescription('Reset a user\'s points to 0 (admin only)')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to reset points for')
+      .setRequired(true)
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  if (!interaction.guild || !interaction.member) {
+    return interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true });
+  }
+
+  // Check permissions
+  if (!(await isAdmin(interaction.member as any))) {
+    return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
+  }
+
+  await interaction.deferReply();
+
+  const targetUser = interaction.options.getUser('user', true);
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { discordId: targetUser.id },
+    });
+
+    if (!user) {
+      return interaction.editReply({
+        content: `❌ ${targetUser.tag} is not verified.`,
+      });
+    }
+
+    const oldPoints = user.points;
+
+    // Reset user points
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { points: 0 },
+    });
+
+    // Create transaction record
+    await prisma.pointTransaction.create({
+      data: {
+        userId: user.id,
+        amount: oldPoints,
+        reason: 'Points reset by admin',
+        givenByDiscordId: interaction.user.id,
+        givenByUsername: interaction.user.tag,
+        type: 'remove',
+        source: 'discord',
+      },
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Points Reset')
+      .addFields(
+        { name: 'User', value: `${targetUser.tag}`, inline: true },
+        { name: 'Previous Points', value: oldPoints.toString(), inline: true },
+        { name: 'New Points', value: '0', inline: true },
+        { name: 'Reset By', value: interaction.user.tag, inline: false }
+      )
+      .setColor(0xff0000)
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+
+    // Log to log channel
+    const config = await prisma.guildConfig.findUnique({
+      where: { guildId: interaction.guildId! },
+    });
+
+    if (config?.logChannelId) {
+      const logChannel = await interaction.guild?.channels.fetch(config.logChannelId);
+      if (logChannel?.isTextBased()) {
+        await logChannel.send({ embeds: [embed] });
+      }
+    }
+
+    logger.info(`${interaction.user.tag} reset ${targetUser.tag}'s points to 0`);
+  } catch (error) {
+    logger.error('Error in /resetpoints command:', error);
+    await interaction.editReply({
+      content: '❌ An error occurred while resetting points.',
+    });
+  }
+}

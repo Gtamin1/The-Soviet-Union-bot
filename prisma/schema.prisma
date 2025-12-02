@@ -1,0 +1,164 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Stores verified users and their Roblox linkage
+model User {
+  id                 String              @id @default(cuid())
+  discordId          String              @unique
+  robloxId           String              @unique
+  robloxUsername     String
+  verifiedAt         DateTime            @default(now())
+  points             Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  // Relations
+  pointTransactions  PointTransaction[]
+  activityLogs       ActivityLog[]
+
+  @@index([discordId])
+  @@index([robloxId])
+}
+
+// Tracks all point transactions (given/removed)
+model PointTransaction {
+  id                  String   @id @default(cuid())
+  userId              String
+  amount              Int
+  reason              String
+  givenByDiscordId    String?
+  givenByRobloxId     String?
+  givenByUsername     String?
+  type                String   // "add" or "remove"
+  source              String   // "discord" or "api" or "activity"
+  createdAt           DateTime @default(now())
+
+  // Relations
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Stores server-specific configuration
+model GuildConfig {
+  id                  String    @id @default(cuid())
+  guildId             String    @unique
+  primaryGroupId      String?
+  verifiedRoleId      String?
+  unverifiedRoleId    String?
+  logChannelId        String?
+  officerRank         Int?
+  adminRoleId         String?
+  apiKey              String?
+  nicknameFormat      String?   // e.g., "[{rank}] {username}"
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  roleBindings        RoleBinding[]
+  groupBindings       GroupBinding[]
+  activityConfigs     ActivityConfig[]
+  pointThresholds     PointThreshold[]
+
+  @@index([guildId])
+}
+
+// Binds Roblox group ranks to Discord roles
+model RoleBinding {
+  id              String      @id @default(cuid())
+  guildId         String
+  discordRoleId   String
+  groupId         String
+  minRank         Int?
+  maxRank         Int?
+  exactRank       Int?
+  rankName        String?
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+// Binds Roblox groups (membership) to Discord roles
+model GroupBinding {
+  id              String      @id @default(cuid())
+  guildId         String
+  groupId         String
+  discordRoleId   String
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+// Configures automatic points for activities
+model ActivityConfig {
+  id              String      @id @default(cuid())
+  guildId         String
+  activityType    String      // e.g., "playtime", "training", "event"
+  pointsPerUnit   Float       // e.g., 1 point per minute
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, activityType])
+  @@index([guildId])
+}
+
+// Logs activity from Roblox games
+model ActivityLog {
+  id              String   @id @default(cuid())
+  userId          String
+  activityType    String
+  value           Float    // e.g., minutes played, number of events
+  metadata        String?  // JSON string for additional data
+  createdAt       DateTime @default(now())
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([activityType])
+  @@index([createdAt])
+}
+
+// Stores point thresholds for notifications
+model PointThreshold {
+  id              String      @id @default(cuid())
+  guildId         String
+  pointsRequired  Int
+  message         String
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([guildId])
+}
+
+// Stores verification codes
+model VerificationCode {
+  id              String   @id @default(cuid())
+  discordId       String   @unique
+  code            String   @unique
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([discordId])
+  @@index([code])
+}
