@@ -1,11 +1,15 @@
 /**
  * /givepoints command - Give points to a user
+ * NOW WITH: Cooldowns, anti-abuse, auto-promotions, and audit logging
  */
 
 import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import prisma from '../db/client.js';
 import { isOfficer } from '../lib/permissions.js';
 import { logger } from '../lib/logger.js';
+import { checkPointsAllowed, recordPointsGiven } from '../lib/antiAbuse.js';
+import { checkAndHandlePromotion } from '../lib/autoPromotion.js';
+import { logAudit } from '../lib/audit.js';
 
 export const data = new SlashCommandBuilder()
   .setName('givepoints')
@@ -57,6 +61,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       });
     }
 
+    // Anti-abuse checks
+    const cooldownCheck = await checkPointsAllowed(
+      interaction.guildId!,
+      interaction.user.id,
+      targetUser.id,
+      amount
+    );
+
+    if (!cooldownCheck.allowed) {
+      return interaction.editReply({
+        content: `❌ ${cooldownCheck.reason}`,
+      });
+    }
+
+    // Store old points for promotion check
+    const oldPoints = user.points;
+
     // Update user points
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
@@ -76,6 +97,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       },
     });
 
+    // Record for cooldown/daily limit tracking
+    await recordPointsGiven(interaction.guildId!, interaction.user.id, targetUser.id, amount);
+
     const embed = new EmbedBuilder()
       .setTitle('✅ Points Given')
       .addFields(
@@ -93,8 +117,36 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // Check thresholds
     await checkPointThresholds(interaction, user.id, updatedUser.points, targetUser.id);
 
+    // Check for auto-promotion
+    const promotionResult = await checkAndHandlePromotion(
+      interaction.client,
+      user.id,
+      interaction.guildId!,
+      updatedUser.points,
+      oldPoints
+    );
+
+    if (promotionResult.promoted && promotionResult.rank) {
+      await interaction.followUp({
+        content: `🎉 **${targetUser.tag}** has been auto-promoted to **${promotionResult.rank.name}**!`,
+      });
+    } else if (promotionResult.requiresApproval) {
+      await interaction.followUp({
+        content: `📋 **${targetUser.tag}** is eligible for promotion! A request has been sent for approval.`,
+        ephemeral: true,
+      });
+    }
+
     // Log to log channel
     await logPointTransaction(interaction, embed);
+
+    // Audit log
+    await logAudit(interaction.guildId!, 'points_given', interaction.user.id, targetUser.id, {
+      amount,
+      reason,
+      newTotal: updatedUser.points,
+      robloxUsername: user.robloxUsername,
+    });
 
     logger.info(`${interaction.user.tag} gave ${amount} points to ${targetUser.tag}`);
   } catch (error) {

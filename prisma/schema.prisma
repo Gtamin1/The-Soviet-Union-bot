@@ -18,12 +18,15 @@ model User {
   robloxUsername     String
   verifiedAt         DateTime            @default(now())
   points             Int                 @default(0)
+  lastDecayDate      DateTime?           // Last time decay was applied
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
   // Relations
   pointTransactions  PointTransaction[]
   activityLogs       ActivityLog[]
+  promotionHistory   PromotionHistory[]
+  activitySessions   ActivitySession[]
 
   @@index([discordId])
   @@index([robloxId])
@@ -61,6 +64,13 @@ model GuildConfig {
   adminRoleId         String?
   apiKey              String?
   nicknameFormat      String?   // e.g., "[{rank}] {username}"
+  robloxCookie        String?   // Encrypted .ROBLOSECURITY cookie
+  promotionMode       String?   @default("auto") // "auto" or "request"
+  promotionsChannelId String?   // Channel for promotion requests
+  pointsCooldown      Int?      @default(0) // Cooldown in seconds
+  maxPointsPerGive    Int?      // Max points that can be given at once
+  dailyPointsLimit    Int?      // Max points an officer can give per day
+  pointDecayPerWeek   Int?      @default(0) // Points that decay weekly
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -69,6 +79,9 @@ model GuildConfig {
   groupBindings       GroupBinding[]
   activityConfigs     ActivityConfig[]
   pointThresholds     PointThreshold[]
+  promotionRanks      PromotionRank[]
+  protectedRanks      ProtectedRank[]
+  decayImmunity       DecayImmunityRank[]
 
   @@index([guildId])
 }
@@ -161,4 +174,137 @@ model VerificationCode {
 
   @@index([discordId])
   @@index([code])
+}
+
+// Auto-promotion ranks based on points
+model PromotionRank {
+  id              String      @id @default(cuid())
+  guildId         String
+  pointsRequired  Int
+  robloxRankId    Int         // The rank number (1-255) in Roblox group
+  rankName        String
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, pointsRequired])
+  @@index([guildId])
+  @@index([pointsRequired])
+}
+
+// Tracks promotion history
+model PromotionHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  guildId         String
+  fromRank        Int?     // Previous rank (null if first promotion)
+  toRank          Int      // New rank
+  rankName        String   // Name of the new rank
+  reason          String   // e.g., "Auto-promoted for reaching 100 points"
+  promotedBy      String?  // Discord ID who manually promoted (null for auto)
+  createdAt       DateTime @default(now())
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([guildId])
+  @@index([createdAt])
+}
+
+// Protected ranks that bot cannot change
+model ProtectedRank {
+  id              String      @id @default(cuid())
+  guildId         String
+  rankId          Int         // Roblox rank number
+  rankName        String?
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, rankId])
+  @@index([guildId])
+}
+
+// Ranks immune to point decay
+model DecayImmunityRank {
+  id              String      @id @default(cuid())
+  guildId         String
+  rankId          Int
+  rankName        String?
+  createdAt       DateTime    @default(now())
+
+  // Relations
+  guildConfig     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, rankId])
+  @@index([guildId])
+}
+
+// Cooldowns for giving points
+model PointCooldown {
+  id              String   @id @default(cuid())
+  guildId         String
+  officerId       String   // Discord ID of officer
+  targetId        String   // Discord ID of user who received points
+  lastGiven       DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([guildId, officerId, targetId])
+  @@index([guildId])
+  @@index([officerId])
+  @@index([lastGiven])
+}
+
+// Daily points tracking for officers
+model DailyPointsGiven {
+  id              String   @id @default(cuid())
+  guildId         String
+  officerId       String   // Discord ID
+  date            DateTime // Date (should be start of day)
+  totalGiven      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@unique([guildId, officerId, date])
+  @@index([guildId])
+  @@index([officerId])
+  @@index([date])
+}
+
+// Active game sessions for playtime tracking
+model ActivitySession {
+  id              String    @id @default(cuid())
+  userId          String
+  guildId         String
+  sessionType     String    // "playtime", "patrol", etc.
+  startTime       DateTime
+  endTime         DateTime?
+  pointsAwarded   Int?
+  createdAt       DateTime  @default(now())
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([guildId])
+  @@index([sessionType])
+}
+
+// Audit log for all actions
+model AuditLog {
+  id              String   @id @default(cuid())
+  guildId         String
+  action          String   // "points_given", "promoted", "demoted", "rank_set", etc.
+  executorId      String   // Discord ID who performed the action
+  targetId        String?  // Discord ID or Roblox ID of target
+  details         String   // JSON string with action details
+  createdAt       DateTime @default(now())
+
+  @@index([guildId])
+  @@index([executorId])
+  @@index([targetId])
+  @@index([createdAt])
+  @@index([action])
 }
