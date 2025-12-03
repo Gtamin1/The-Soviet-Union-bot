@@ -6,6 +6,7 @@ import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from '
 import prisma from '../db/client.js';
 import { isOfficer } from '../lib/permissions.js';
 import { logger } from '../lib/logger.js';
+import { checkAndHandlePromotion } from '../lib/autoPromotion.js';
 
 export const data = new SlashCommandBuilder()
   .setName('batch')
@@ -80,6 +81,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     let successful = 0;
     let failed = 0;
     const results: string[] = [];
+    const promotions: string[] = [];
 
     for (const targetUser of users) {
       try {
@@ -93,8 +95,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           continue;
         }
 
+        // Store old points for promotion check
+        const oldPoints = user.points;
+
         // Update user points
-        await prisma.user.update({
+        const updatedUser = await prisma.user.update({
           where: { id: user.id },
           data: { points: { increment: amount } },
         });
@@ -114,7 +119,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
         results.push(`✅ ${targetUser.tag} - +${amount} points`);
         successful++;
+
+        // Check for auto-promotion
+        const promotionResult = await checkAndHandlePromotion(
+          interaction.client,
+          user.id,
+          interaction.guildId!,
+          updatedUser.points,
+          oldPoints
+        );
+
+        if (promotionResult.promoted && promotionResult.rank) {
+          promotions.push(`🎉 ${targetUser.tag} promoted to **${promotionResult.rank.name}**!`);
+        } else if (promotionResult.requiresApproval) {
+          promotions.push(`📋 ${targetUser.tag} is eligible for promotion (pending approval)`);
+        }
       } catch (error) {
+        logger.error(`Error processing batch points for ${targetUser.tag}:`, error);
         results.push(`❌ ${targetUser.tag} - Error occurred`);
         failed++;
       }
@@ -134,6 +155,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
+
+    // Send promotions as a follow-up if any occurred
+    if (promotions.length > 0) {
+      await interaction.followUp({
+        content: '**Auto-Promotions:**\n' + promotions.join('\n'),
+      });
+    }
 
     // Log to log channel
     const config = await prisma.guildConfig.findUnique({

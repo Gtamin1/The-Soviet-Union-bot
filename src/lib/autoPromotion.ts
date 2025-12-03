@@ -29,14 +29,19 @@ export async function checkAndHandlePromotion(
   oldPoints: number
 ): Promise<PromotionCheckResult> {
   try {
+    logger.info(`[Auto-Promotion] Checking promotion for user ${userId} with ${newPoints} points (old: ${oldPoints})`);
+
     // Get user data
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user) {
+      logger.warn(`[Auto-Promotion] User ${userId} not found in database`);
       return { promoted: false, error: 'User not found' };
     }
+
+    logger.info(`[Auto-Promotion] User: ${user.robloxUsername} (Roblox ID: ${user.robloxId})`);
 
     // Get guild config
     const config = await prisma.guildConfig.findUnique({
@@ -48,51 +53,75 @@ export async function checkAndHandlePromotion(
     });
 
     if (!config || !config.primaryGroupId) {
+      logger.warn(`[Auto-Promotion] No primary group configured for guild ${guildId}`);
       return { promoted: false, error: 'No primary group configured' };
     }
 
     if (!config.robloxCookie) {
+      logger.warn(`[Auto-Promotion] No Roblox cookie configured for guild ${guildId}`);
       return { promoted: false, error: 'No Roblox cookie configured' };
     }
 
     // Get user's current rank in the group
     const currentRankInfo = await getUserRankInGroup(user.robloxId, config.primaryGroupId);
     if (!currentRankInfo) {
+      logger.warn(`[Auto-Promotion] User ${user.robloxUsername} not found in primary group ${config.primaryGroupId}`);
       return { promoted: false, error: 'User not in primary group' };
     }
+
+    logger.info(`[Auto-Promotion] Current rank: ${currentRankInfo.rank} (${currentRankInfo.roleName})`);
 
     // Check if current rank is protected
     const isProtected = config.protectedRanks.some(pr => pr.rankId === currentRankInfo.rank);
     if (isProtected) {
+      logger.info(`[Auto-Promotion] Current rank ${currentRankInfo.rank} is protected, skipping promotion`);
       return { promoted: false, error: 'Current rank is protected' };
     }
 
-    // Find all promotion ranks they're eligible for
+    // Find all promotion ranks they're eligible for based on points AND that are higher than current rank
+    // FIXED: Removed the "pointsRequired > oldPoints" condition that was causing promotions to be skipped
     const eligiblePromotions = config.promotionRanks
-      .filter(pr => pr.pointsRequired <= newPoints && pr.pointsRequired > oldPoints)
+      .filter(pr => {
+        const meetsPoints = pr.pointsRequired <= newPoints;
+        const higherRank = pr.robloxRankId > currentRankInfo.rank;
+
+        logger.info(`[Auto-Promotion] Checking rank ${pr.robloxRankId} (${pr.rankName}): ` +
+          `requires ${pr.pointsRequired} pts, user has ${newPoints} pts, ` +
+          `meetsPoints=${meetsPoints}, higherRank=${higherRank} (current: ${currentRankInfo.rank})`);
+
+        return meetsPoints && higherRank;
+      })
       .sort((a, b) => b.pointsRequired - a.pointsRequired); // Highest first
 
+    logger.info(`[Auto-Promotion] Found ${eligiblePromotions.length} eligible promotions`);
+
     if (eligiblePromotions.length === 0) {
+      logger.info(`[Auto-Promotion] No eligible promotions for ${user.robloxUsername}`);
       return { promoted: false };
     }
 
     // Get the highest rank they're eligible for
     const targetPromotion = eligiblePromotions[0];
 
+    logger.info(`[Auto-Promotion] Target promotion: Rank ${targetPromotion.robloxRankId} (${targetPromotion.rankName}) - requires ${targetPromotion.pointsRequired} pts`);
+
     // Check if target rank is protected
     const targetProtected = config.protectedRanks.some(pr => pr.rankId === targetPromotion.robloxRankId);
     if (targetProtected) {
+      logger.info(`[Auto-Promotion] Target rank ${targetPromotion.robloxRankId} is protected, cannot promote`);
       return { promoted: false, error: 'Target rank is protected' };
     }
 
     // Check if target rank is lower or equal to current rank (shouldn't promote backwards)
+    // This should never happen due to the filter above, but keep as safety check
     if (targetPromotion.robloxRankId <= currentRankInfo.rank) {
-      logger.warn(`User ${user.robloxUsername} has ${newPoints} points but target rank ${targetPromotion.robloxRankId} is <= current rank ${currentRankInfo.rank}`);
+      logger.warn(`[Auto-Promotion] User ${user.robloxUsername} has ${newPoints} points but target rank ${targetPromotion.robloxRankId} is <= current rank ${currentRankInfo.rank}`);
       return { promoted: false, error: 'Target rank is not higher than current rank' };
     }
 
     // Check promotion mode
     if (config.promotionMode === 'request') {
+      logger.info(`[Auto-Promotion] Promotion mode is 'request', sending approval request for ${user.robloxUsername}`);
       // Send promotion request for approval
       await sendPromotionRequest(client, config, user, currentRankInfo.rank, targetPromotion);
       return {
@@ -102,10 +131,15 @@ export async function checkAndHandlePromotion(
     }
 
     // Auto mode - promote directly
+    logger.info(`[Auto-Promotion] Promotion mode is 'auto', proceeding with promotion`);
+
     const role = await getRoleByRank(config.primaryGroupId, targetPromotion.robloxRankId);
     if (!role) {
+      logger.error(`[Auto-Promotion] Target rank ${targetPromotion.robloxRankId} not found in group ${config.primaryGroupId}`);
       return { promoted: false, error: 'Target rank not found in group' };
     }
+
+    logger.info(`[Auto-Promotion] Promoting ${user.robloxUsername} from rank ${currentRankInfo.rank} to rank ${targetPromotion.robloxRankId} (${targetPromotion.rankName})`);
 
     // Perform the promotion
     const result = await setUserRank(
@@ -116,9 +150,12 @@ export async function checkAndHandlePromotion(
     );
 
     if (!result.success) {
-      logger.error(`Failed to promote ${user.robloxUsername}: ${result.error}`);
+      logger.error(`[Auto-Promotion] Failed to promote ${user.robloxUsername}: ${result.error}`);
       return { promoted: false, error: result.error };
     }
+
+    logger.info(`[Auto-Promotion] ✓ Successfully promoted ${user.robloxUsername} to ${targetPromotion.rankName}!`);
+
 
     // Record promotion history
     await prisma.promotionHistory.create({
