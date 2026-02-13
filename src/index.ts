@@ -10,8 +10,8 @@ import cors from 'cors';
 import { logger } from './lib/logger.js';
 import prisma from './db/client.js';
 
-// Import command files (will be created next)
-import { readdirSync } from 'fs';
+// Import command files
+import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -51,22 +51,37 @@ interface ExtendedClient extends Client {
 
 (client as ExtendedClient).commands = new Collection();
 
-// Load commands
-const commandsPath = join(__dirname, 'commands');
-const commandFiles = readdirSync(commandsPath).filter(file => file.endsWith('.js') || file.endsWith('.ts'));
+// Recursive function to load commands from directories
+async function loadCommandsFromDir(dir: string, commands: any[], clientExt: ExtendedClient) {
+  const files = readdirSync(dir);
 
-const commands: any[] = [];
+  for (const file of files) {
+    const filePath = join(dir, file);
+    const stat = statSync(filePath);
 
-for (const file of commandFiles) {
-  const filePath = join(commandsPath, file);
-  const command = await import(filePath);
-
-  if ('data' in command && 'execute' in command) {
-    (client as ExtendedClient).commands.set(command.data.name, command);
-    commands.push(command.data.toJSON());
-    logger.info(`Loaded command: ${command.data.name}`);
+    if (stat.isDirectory()) {
+      // Recursively load from subdirectory
+      await loadCommandsFromDir(filePath, commands, clientExt);
+    } else if (file.endsWith('.js') || file.endsWith('.ts')) {
+      // Load command file
+      try {
+        const command = await import(filePath);
+        if ('data' in command && 'execute' in command) {
+          clientExt.commands.set(command.data.name, command);
+          commands.push(command.data.toJSON());
+          logger.info(`Loaded command: ${command.data.name}`);
+        }
+      } catch (error) {
+        logger.error(`Error loading command ${file}:`, error);
+      }
+    }
   }
 }
+
+// Load commands
+const commandsPath = join(__dirname, 'commands');
+const commands: any[] = [];
+await loadCommandsFromDir(commandsPath, commands, client as ExtendedClient);
 
 // Load events
 const eventsPath = join(__dirname, 'events');
@@ -107,7 +122,7 @@ client.login(process.env.DISCORD_TOKEN);
 
 // Create Express API server
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.API_PORT || process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -118,12 +133,14 @@ import pointsRouter from './api/points.js';
 import userRouter from './api/user.js';
 import activityRouter from './api/activity.js';
 import verifyRouter from './api/verify.js';
+import moderationRouter from './api/moderation.js';
 
 // Use routes
 app.use('/api/points', pointsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/verify', verifyRouter);
+app.use('/api/moderation', moderationRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
