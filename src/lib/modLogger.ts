@@ -43,23 +43,35 @@ export interface KickLogData {
 }
 
 export interface WarnLogData {
-  warningId: number;
   targetUsername: string;
   targetDiscordId?: string;
+  targetRobloxId?: string;
   reason: string;
   severity: string;
+  warningCount: number;
   moderatorUsername: string;
   moderatorDiscordId: string;
-  totalWarnings: number;
-  autoActionTaken?: 'kick' | 'ban';
 }
 
 export interface PardonLogData {
   warningId: number;
   targetUsername: string;
-  reason: string;
+  targetDiscordId?: string;
+  targetRobloxId?: string;
+  originalReason: string;
+  pardonReason: string;
+  remainingWarnings: number;
   moderatorUsername: string;
   moderatorDiscordId: string;
+}
+
+export interface BanExpiryLogData {
+  banId: number;
+  targetUsername: string;
+  targetDiscordId?: string;
+  targetRobloxId?: string;
+  originalReason: string;
+  unbannedFromDiscord: boolean;
 }
 
 /**
@@ -258,31 +270,28 @@ export async function logWarn(client: Client, guildId: string, data: WarnLogData
       .setColor(color)
       .addFields(
         { name: 'User', value: data.targetUsername, inline: true },
-        { name: 'Warning ID', value: `#${data.warningId}`, inline: true },
         { name: 'Moderator', value: `<@${data.moderatorDiscordId}>`, inline: true },
         { name: 'Severity', value: data.severity.toUpperCase(), inline: true },
-        { name: 'Total Warnings', value: data.totalWarnings.toString(), inline: true },
-        { name: '\u200b', value: '\u200b', inline: true },
+        { name: 'Total Warnings', value: data.warningCount.toString(), inline: true },
         { name: 'Reason', value: data.reason, inline: false }
       )
       .setTimestamp();
 
     if (data.targetDiscordId) {
-      embed.addFields({ name: 'Discord User', value: `<@${data.targetDiscordId}>`, inline: true });
+      embed.addFields({ name: 'Discord ID', value: data.targetDiscordId, inline: true });
     }
 
-    if (data.autoActionTaken) {
-      embed.addFields({ name: '🚨 Auto-Action', value: `User auto-${data.autoActionTaken}ed due to warning threshold`, inline: false });
+    if (data.targetRobloxId) {
+      embed.addFields({ name: 'Roblox ID', value: data.targetRobloxId, inline: true });
     }
 
     await logChannel.send({ embeds: [embed] });
 
     await logAudit(guildId, 'warn', data.moderatorDiscordId, data.targetDiscordId || '', {
-      warningId: data.warningId,
       targetUsername: data.targetUsername,
       reason: data.reason,
       severity: data.severity,
-      totalWarnings: data.totalWarnings,
+      warningCount: data.warningCount,
     });
 
   } catch (error) {
@@ -313,16 +322,27 @@ export async function logPardon(client: Client, guildId: string, data: PardonLog
         { name: 'User', value: data.targetUsername, inline: true },
         { name: 'Warning ID', value: `#${data.warningId}`, inline: true },
         { name: 'Pardoned By', value: `<@${data.moderatorDiscordId}>`, inline: true },
-        { name: 'Reason', value: data.reason, inline: false }
+        { name: 'Original Reason', value: data.originalReason, inline: false },
+        { name: 'Pardon Reason', value: data.pardonReason, inline: false },
+        { name: 'Remaining Warnings', value: data.remainingWarnings.toString(), inline: true }
       )
       .setTimestamp();
+
+    if (data.targetDiscordId) {
+      embed.addFields({ name: 'Discord ID', value: data.targetDiscordId, inline: true });
+    }
+
+    if (data.targetRobloxId) {
+      embed.addFields({ name: 'Roblox ID', value: data.targetRobloxId, inline: true });
+    }
 
     await logChannel.send({ embeds: [embed] });
 
     await logAudit(guildId, 'pardon_warning', data.moderatorDiscordId, '', {
       warningId: data.warningId,
       targetUsername: data.targetUsername,
-      reason: data.reason,
+      pardonReason: data.pardonReason,
+      remainingWarnings: data.remainingWarnings,
     });
 
   } catch (error) {
@@ -333,7 +353,7 @@ export async function logPardon(client: Client, guildId: string, data: PardonLog
 /**
  * Log a ban expiry
  */
-export async function logBanExpiry(client: Client, guildId: string, banId: number, username: string): Promise<void> {
+export async function logBanExpiry(client: Client, guildId: string, data: BanExpiryLogData): Promise<void> {
   try {
     const modConfig = await prisma.moderationConfig.findUnique({
       where: { id: guildId },
@@ -350,17 +370,31 @@ export async function logBanExpiry(client: Client, guildId: string, banId: numbe
       .setTitle('⏰ BAN EXPIRED')
       .setColor(0x5865f2) // Blue
       .addFields(
-        { name: 'User', value: username, inline: true },
-        { name: 'Ban ID', value: `#${banId}`, inline: true }
+        { name: 'User', value: data.targetUsername, inline: true },
+        { name: 'Ban ID', value: `#${data.banId}`, inline: true }
       )
-      .setDescription('This ban has reached its expiration time and has been automatically lifted.')
+      .setDescription(`This ban has reached its expiration time and has been automatically lifted.\n\n**Original Reason:** ${data.originalReason}`)
       .setTimestamp();
+
+    if (data.targetDiscordId) {
+      embed.addFields({ name: 'Discord ID', value: data.targetDiscordId, inline: true });
+    }
+
+    if (data.targetRobloxId) {
+      embed.addFields({ name: 'Roblox ID', value: data.targetRobloxId, inline: true });
+    }
+
+    embed.addFields({
+      name: 'Discord Unban',
+      value: data.unbannedFromDiscord ? '✅ Unbanned' : '❌ Not in server',
+      inline: true,
+    });
 
     await logChannel.send({ embeds: [embed] });
 
     await logAudit(guildId, 'ban_expired', 'SYSTEM', '', {
-      banId,
-      username,
+      banId: data.banId,
+      username: data.targetUsername,
     });
 
   } catch (error) {
