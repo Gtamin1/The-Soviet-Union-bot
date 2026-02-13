@@ -72,6 +72,35 @@ model GuildConfig {
   maxPointsPerGive    Int?      // Max points that can be given at once
   dailyPointsLimit    Int?      // Max points an officer can give per day
   pointDecayPerWeek   Int?      @default(0) // Points that decay weekly
+
+  // Stats Channels
+  statsEnabled        Boolean   @default(false)
+  statsCategory       String?
+  statsMembersChannel String?
+  statsVerifiedChannel String?
+  statsInGameChannel  String?
+  statsPointsChannel  String?
+  statsBansChannel    String?
+
+  // Welcome/Goodbye System
+  welcomeChannelId    String?
+  welcomeMessage      String?
+  welcomeDmEnabled    Boolean   @default(false)
+  welcomeDmMessage    String?
+  goodbyeChannelId    String?
+  goodbyeMessage      String?
+
+  // Auto-role on join
+  autoRoleId          String?
+
+  // Suggestion System
+  suggestionsChannelId String?
+
+  // Ticket System
+  ticketCategoryId    String?
+  ticketLogChannelId  String?
+  ticketPingRoleId    String?
+
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -327,4 +356,191 @@ model AuditLog {
   @@index([targetId])
   @@index([createdAt])
   @@index([action])
+}
+
+// ==================== MODERATION SYSTEM ====================
+
+// Bans (Discord + Roblox game)
+model Ban {
+  id                    Int       @id @default(autoincrement())
+  guildId               String    // Discord server ID
+
+  // Target info
+  robloxId              String?   // Roblox user ID (if known)
+  robloxUsername        String?   // Roblox username at time of ban
+  discordId             String?   // Discord user ID (if known)
+  discordUsername       String?   // Discord username at time of ban
+
+  // Ban details
+  reason                String    // Why they were banned
+  evidence              String?   // Optional evidence (image URLs, descriptions)
+  duration              Int?      // Duration in seconds (NULL = permanent)
+  expiresAt             DateTime? // When the ban expires (NULL = permanent)
+
+  // Status
+  active                Boolean   @default(true)
+  unbannedAt            DateTime?
+  unbannedBy            String?   // Discord ID of who unbanned
+  unbanReason           String?
+
+  // Moderator info
+  moderatorDiscordId    String
+  moderatorUsername     String
+
+  // Tracking
+  bannedInDiscord       Boolean   @default(false) // Was the Discord ban successful?
+  bannedInRoblox        Boolean   @default(false) // Was the Roblox game ban successful?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([guildId, robloxId])
+  @@index([guildId, discordId])
+  @@index([guildId, active])
+  @@index([expiresAt])
+}
+
+// Warnings issued to users
+model Warning {
+  id                  Int       @id @default(autoincrement())
+  guildId             String
+
+  // Target
+  robloxId            String?
+  discordId           String?
+  targetUsername      String    // Username at time of warning
+
+  // Warning details
+  reason              String
+  severity            String    @default("low") // "low", "medium", "high"
+
+  // Moderator
+  moderatorDiscordId  String
+  moderatorUsername   String
+
+  // Status
+  active              Boolean   @default(true)  // Can be pardoned
+  pardonedAt          DateTime?
+  pardonedBy          String?
+
+  createdAt           DateTime  @default(now())
+
+  @@index([guildId, discordId])
+  @@index([guildId, robloxId])
+  @@index([guildId, active])
+}
+
+// Kicks from Discord + Roblox
+model Kick {
+  id                  Int       @id @default(autoincrement())
+  guildId             String
+
+  robloxId            String?
+  discordId           String?
+  targetUsername      String
+
+  reason              String
+
+  kickedFromDiscord   Boolean   @default(false)
+  kickedFromRoblox    Boolean   @default(false)
+
+  moderatorDiscordId  String
+  moderatorUsername   String
+
+  createdAt           DateTime  @default(now())
+
+  @@index([guildId, discordId])
+  @@index([guildId, robloxId])
+}
+
+// Pending kicks for Roblox game to process
+model PendingKick {
+  id              Int       @id @default(autoincrement())
+  robloxId        String
+  reason          String
+  delivered       Boolean   @default(false)
+  confirmed       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  @@index([robloxId, delivered])
+}
+
+// Moderation configuration per server
+model ModerationConfig {
+  id                    String    @id // guildId
+
+  // Channels
+  modLogChannelId       String?   // Where mod actions are logged
+  banAppealChannelId    String?   // Where ban appeals go
+
+  // Auto-moderation
+  autoKickWarnings      Int?      // Auto-kick after X warnings (null = disabled)
+  autoBanWarnings       Int?      // Auto-ban after X warnings (null = disabled)
+
+  // Roblox game ban integration
+  gameBanEnabled        Boolean   @default(true)  // Sync bans to Roblox game
+
+  // Roles
+  moderatorRoleId       String?   // Who can use moderation commands
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+// ==================== FEATURE SYSTEMS ====================
+
+// Suggestions from users
+model Suggestion {
+  id              Int       @id @default(autoincrement())
+  guildId         String
+  authorDiscordId String
+  authorUsername  String
+  content         String
+  status          String    @default("pending") // "pending", "approved", "denied"
+  statusReason    String?
+  statusBy        String?   // Discord ID of reviewer
+  messageId       String?   // Discord message ID for editing
+  threadId        String?   // Discussion thread ID
+  upvotes         Int       @default(0)
+  downvotes       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([guildId, status])
+}
+
+// Support tickets
+model Ticket {
+  id              Int       @id @default(autoincrement())
+  guildId         String
+  channelId       String    @unique
+  authorDiscordId String
+  authorUsername  String
+  claimedBy       String?   // Moderator Discord ID
+  status          String    @default("open") // "open", "claimed", "closed"
+  closedBy        String?
+  closeReason     String?
+  transcriptUrl   String?
+  createdAt       DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([guildId, status])
+}
+
+// Giveaways
+model Giveaway {
+  id              Int       @id @default(autoincrement())
+  guildId         String
+  channelId       String
+  messageId       String
+  prize           String
+  winnersCount    Int       @default(1)
+  hostDiscordId   String
+  endsAt          DateTime
+  ended           Boolean   @default(false)
+  winners         String[]  // Array of Discord user IDs
+  createdAt       DateTime  @default(now())
+
+  @@index([guildId, ended])
+  @@index([endsAt])
 }
