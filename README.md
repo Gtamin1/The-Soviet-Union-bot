@@ -73,7 +73,7 @@ sudo -u postgres createdb roblox_bot
 2. Open **Terminal** (macOS/Linux) or **Command Prompt** (Windows)
 3. Navigate to the bot folder:
    ```bash
-   cd path/to/The-Soviet-Union-bot
+   cd path/to/The-CUSAR-bot
    ```
 4. **Install dependencies**:
    ```bash
@@ -394,7 +394,7 @@ If you're stuck:
 ## 📁 Project Structure
 
 ```
-The-Soviet-Union-bot/
+The-CUSAR-bot/
 ├── src/
 │   ├── commands/       # Discord slash commands
 │   ├── events/         # Discord event handlers

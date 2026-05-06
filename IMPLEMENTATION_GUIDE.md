@@ -40,7 +40,7 @@ This guide explains what's been implemented, how to set it up, and what still ne
 ### Step 1: Install Dependencies
 
 ```bash
-cd ~/The-Soviet-Union-bot
+cd ~/The-CUSAR-bot
 npm install
 ```
 

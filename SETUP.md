@@ -210,8 +210,8 @@ git config --global user.email "your.email@example.com"
 cd /home/user
 
 # Clone the repository
-git clone https://github.com/your-username/The-Soviet-Union-bot.git
-cd The-Soviet-Union-bot
+git clone https://github.com/your-username/The-CUSAR-bot.git
+cd The-CUSAR-bot
 
 # Install dependencies
 npm install
@@ -443,7 +443,7 @@ pm2 logs tsu-bot --lines 100
 pm2 restart tsu-bot
 
 # If still not working, check environment
-cd /home/user/The-Soviet-Union-bot
+cd /home/user/The-CUSAR-bot
 node dist/index.js
 # Look for error messages
 ```
@@ -452,7 +452,7 @@ node dist/index.js
 
 ```bash
 # Re-register commands
-cd /home/user/The-Soviet-Union-bot
+cd /home/user/The-CUSAR-bot
 node dist/index.js
 
 # Wait 1-2 minutes for Discord to update
@@ -522,7 +522,7 @@ pm2 logs tsu-bot | grep "activity"
 ### Update Bot
 
 ```bash
-cd /home/user/The-Soviet-Union-bot
+cd /home/user/The-CUSAR-bot
 git pull
 npm install
 npm run build
@@ -551,7 +551,7 @@ pm2 logs tsu-bot --err
 # Set up automatic daily backups
 crontab -e
 # Add this line:
-0 2 * * * /home/user/The-Soviet-Union-bot/scripts/backup.sh
+0 2 * * * /home/user/The-CUSAR-bot/scripts/backup.sh
 
 # Restore from backup
 psql -U tsubot -d tsubot -h localhost < /home/user/backups/tsubot_TIMESTAMP.sql
