@@ -13,6 +13,14 @@ import { logger } from '../../lib/logger.js';
 export const data = new SlashCommandBuilder()
   .setName('ban')
   .setDescription('Ban a user from Discord and Roblox game')
+  .addStringOption(option =>
+    option
+      .setName('reason')
+      .setDescription('Reason for the ban')
+      .setRequired(true)
+      .setMinLength(3)
+      .setMaxLength(500)
+  )
   .addUserOption(option =>
     option
       .setName('user')
@@ -24,14 +32,6 @@ export const data = new SlashCommandBuilder()
       .setName('roblox')
       .setDescription('Roblox username to ban (if not in Discord)')
       .setRequired(false)
-  )
-  .addStringOption(option =>
-    option
-      .setName('reason')
-      .setDescription('Reason for the ban')
-      .setRequired(true)
-      .setMinLength(3)
-      .setMaxLength(500)
   )
   .addStringOption(option =>
     option

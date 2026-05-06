@@ -12,6 +12,14 @@ import { logger } from '../../lib/logger.js';
 export const data = new SlashCommandBuilder()
   .setName('kick')
   .setDescription('Kick a user from Discord and Roblox game')
+  .addStringOption(option =>
+    option
+      .setName('reason')
+      .setDescription('Reason for the kick')
+      .setRequired(true)
+      .setMinLength(3)
+      .setMaxLength(500)
+  )
   .addUserOption(option =>
     option
       .setName('user')
@@ -23,14 +31,6 @@ export const data = new SlashCommandBuilder()
       .setName('roblox')
       .setDescription('Roblox username to kick from game')
       .setRequired(false)
-  )
-  .addStringOption(option =>
-    option
-      .setName('reason')
-      .setDescription('Reason for the kick')
-      .setRequired(true)
-      .setMinLength(3)
-      .setMaxLength(500)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {

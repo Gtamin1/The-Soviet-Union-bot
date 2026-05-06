@@ -13,6 +13,14 @@ import { logger } from '../../lib/logger.js';
 export const data = new SlashCommandBuilder()
   .setName('unban')
   .setDescription('Unban a user')
+  .addStringOption(option =>
+    option
+      .setName('reason')
+      .setDescription('Reason for unbanning')
+      .setRequired(true)
+      .setMinLength(3)
+      .setMaxLength(500)
+  )
   .addUserOption(option =>
     option
       .setName('user')
@@ -31,14 +39,6 @@ export const data = new SlashCommandBuilder()
       .setDescription('Ban ID number')
       .setRequired(false)
       .setMinValue(1)
-  )
-  .addStringOption(option =>
-    option
-      .setName('reason')
-      .setDescription('Reason for unbanning')
-      .setRequired(true)
-      .setMinLength(3)
-      .setMaxLength(500)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
